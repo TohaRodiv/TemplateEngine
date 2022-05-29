@@ -3,72 +3,112 @@
 namespace TemplateEngine;
 
 /**
- * Простой HTML шаблонизатор. В базовом варианте использются переменные в таком синтаксисе #VAR_NAME#
+ * Простой HTML/PHP шаблонизатор
  */
 class TemplateEngine
 {
 	/**
-	 * @var string $templateDir
+	 * @var string путь до папки с шаблонами
 	 */
 	protected $templateDir;
 	/**
-	 * @var array $chars
+	 * @var string|null имя базового шаблона
 	 */
-	protected $chars;
+	protected $baseTemplateName;
 	/**
-	 * 
-	 * @param array $options
-	 * ```
-	 * $options['template_dir'] = 'Путь до папки с шаблонами;
-	 * $options['chars'] = ['#', '#'];
-	 * ```
+	 * @var array доп. параметры базового шаблона
 	 */
-	public function __construct(array $options = [])
+	protected $baseTemplateParams;
+
+
+	/**
+	 * @param string $templateDir путь до папки с шаблонами
+	 */
+	public function __construct(string $templateDir)
 	{
-		$this->templateDir = !empty($options['template_dir']) ? $options['template_dir'] : __DIR__ . '/templates/';
-		$this->chars = !empty($options['chars']) ? $options['chars'] : ['#', '#'];
+		$this->templateDir = $templateDir;
+		/**
+		 * По умолчанию работаем без базового шаблона, поэтому $this->baseTemplateName = null
+		 */
+		$this->baseTemplateName = null;
+		$this->baseTemplateParams = [];
+	}
+	/**
+	 * @param string|null $templateName имя базового шаблона
+	 */
+	public function setBaseTemplateName(string|null $templateName)
+	{
+		$this->baseTemplateName = $templateName;
+	}
+	/**
+	 * @param array $params доп. параметры базового шаблона
+	 */
+	public function setBaseTemplateParams(array $params)
+	{
+		$this->baseTemplateParams = $params;
 	}
 	/**
 	 * Возвращает обработанный шаблон
 	 * 
 	 * @param string $templateName имя файла шаблона (можно путь указать)
-	 * @param array $params переменные, передаваемые в шаблон
+	 * @param array $params параметры, передаваемые в шаблон
 	 * 
 	 * @throws Exception
 	 * 
 	 * @return string обработанный шаблон
 	 */
-	public function loadWithoutBaseTemplate(string $templateName, array $params)
+	protected function _loadTemplate(string $templateName, array $_params = [])
 	{
-		$templatePath = $this->templateDir . $templateName;
+		$_templatePath = $this->templateDir . $templateName;
 
-		if (!file_exists($templatePath)) {
-			throw new \Exception("Шаблон не найден по указаному пути: $templatePath");
+		if (!is_file($_templatePath)) {
+			throw new \Exception("Шаблон не найден по указаному пути: $_templatePath");
 		}
 
-		$content = file_get_contents($templatePath);
+		$params = new class {
+			public function __set($name, $value) {
+				$this->{$name} = $value;
+			}
+		};
 
-		foreach ($params as $paramName => $paramValue) {
-			$content = str_replace("{$this->chars[0]}$paramName{$this->chars[1]}", $paramValue, $content);
+		foreach ($_params as $paramName => $paramValue) {
+			$params->{$paramName} = $paramValue;
 		}
 
-		return $content;
+		unset($_params);
+		unset($templateName);
+		unset($paramName);
+		unset($paramValue);
+
+		ob_start();
+		include $_templatePath;
+		return ob_get_clean();
 	}
 	/**
-	 * Возвращает обработанный шаблон вместе с базовым шаблонов. В базовом шаблоне обязательно должна быть переменная CONTENT
+	 * Возвращает обработанный шаблон вместе с базовым шаблонов. В базовом шаблоне обязательно должна быть переменная $content
 	 * 
 	 * @param string $templateName имя файла шаблона (можно путь указать)
-	 * @param array $params переменные, передаваемые в шаблон
+	 * @param array $params параметры, передаваемые в шаблон
 	 * 
 	 * @throws Exception
 	 * 
 	 * @return string
 	 */
-	public function loadTemplate(string $templateName, array $params, string $baseTemplateName = 'base.html')
+	public function loadTemplate(string $templateName, array $params = [])
 	{
-		$content = $this->loadWithoutBaseTemplate($templateName, $params);
-		return $this->loadWithoutBaseTemplate($baseTemplateName, [
-			'CONTENT' => $content,
-		]);
+		$content = $this->_loadTemplate($templateName, $params);
+
+		if (!is_null($this->baseTemplateName)) {
+			$baseTemplateParams = array_merge(
+				[
+					'content' => $content,
+				],
+				$this->baseTemplateParams,
+			);
+			
+			return $this->_loadTemplate($this->baseTemplateName, $baseTemplateParams);
+		} else {
+			return $content;
+		}
 	}
 }
